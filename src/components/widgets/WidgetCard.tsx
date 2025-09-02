@@ -26,29 +26,29 @@ export const WidgetCard = ({ widget, onRemove }: WidgetCardProps) => {
         // Add symbol parameter second
         params.append("symbol", widget.company);
         params.append("interval", "5min");
-        
-        // if (widget.intraday?.outputSize) {
-        //   params.append("outputsize", widget.intraday.outputSize);
-        // }
         if (widget.intraday?.month) {
-          // params.append("month", widget.intraday.month);
           params.append("outputsize", "full");
         }
         break;
       case "daily":
         params.append("function", "TIME_SERIES_DAILY");
+        // params.append("symbol", widget.company);
         break;
       case "weekly":
         params.append("function", "TIME_SERIES_WEEKLY");
+        // params.append("symbol", widget.company);
         break;
       case "monthly":
         params.append("function", "TIME_SERIES_MONTHLY");
+        // params.append("symbol", widget.company);
         break;
       default:
         params.append("function", "TIME_SERIES_DAILY");
+        params.append("symbol", widget.company);
     }
-
-    // Add apikey parameter last
+    if(widget.dataType !== "intraday") {
+      params.append("symbol", widget.company);
+    }
     params.append("apikey", "demo");
 
     return `${baseUrl}?${params.toString()}`;
