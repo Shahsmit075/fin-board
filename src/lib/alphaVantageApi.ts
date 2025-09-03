@@ -52,12 +52,17 @@ export const fetchAlphaVantageData = async (
   
   // Determine TTL based on data type
   const ttl = widget.function === 'TIME_SERIES_INTRADAY' 
-    ? CACHE_TTL.INTRADAY 
-    : CACHE_TTL.DAILY;
+    ? CACHE_TTL.INTRADAY // 5 minutes for intraday data
+    : widget.function === 'TIME_SERIES_DAILY'
+    ? CACHE_TTL.DAILY // 24 hours for daily data
+    : widget.function === 'TIME_SERIES_WEEKLY'
+    ? CACHE_TTL.WEEKLY // 1 week for weekly data
+    : CACHE_TTL.MONTHLY; // 1 month for monthly data
     
   // Try to get data from cache first
   const cachedData = await getCachedData<AlphaVantageResponse>(cacheKey);
   if (cachedData) {
+    console.log(`[AlphaVantage Cache] Hit for ${widget.symbol} (${widget.function})`);
     return { ...cachedData, isCached: true };
   }
 
@@ -67,10 +72,11 @@ export const fetchAlphaVantageData = async (
     });
 
     if (!response.ok) {
-      // If we have cached data and the API fails, return cached data with a warning
-      if (cachedData) {
-        console.warn('API request failed, returning cached data');
-        return { ...cachedData, isCached: true };
+      // Try to get any cached data if the API fails
+      const fallbackData = await getCachedData<AlphaVantageResponse>(cacheKey);
+      if (fallbackData) {
+        console.warn(`[AlphaVantage Cache] API failed (${response.status}), returning cached data for ${widget.symbol}`);
+        return { ...fallbackData, isCached: true };
       }
       throw new AlphaVantageError(`HTTP ${response.status}: ${response.statusText}`);
     }
@@ -79,10 +85,11 @@ export const fetchAlphaVantageData = async (
 
     // Handle rate limit response
     if (json['Note'] || json['Information']?.includes('API key')) {
-      // If we have cached data and hit rate limit, return cached data with a warning
-      if (cachedData) {
-        console.warn('Rate limit hit, returning cached data');
-        return { ...cachedData, isCached: true };
+      // Try to get any cached data if rate limited
+      const fallbackData = await getCachedData<AlphaVantageResponse>(cacheKey);
+      if (fallbackData) {
+        console.warn(`[AlphaVantage Cache] Rate limited, returning cached data for ${widget.symbol}`);
+        return { ...fallbackData, isCached: true };
       }
       
       throw new AlphaVantageError(
@@ -135,7 +142,13 @@ export const fetchAlphaVantageData = async (
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       .slice(-50); // Keep last 50 data points for performance
 
-    return { data, metaData };
+    // Create the result object
+    const result = { data, metaData, isCached: false };
+    
+    // Store in cache before returning
+    await setCachedData(cacheKey, result, ttl);
+    
+    return result;
   } catch (error) {
     if (error instanceof AlphaVantageError) {
       throw error;

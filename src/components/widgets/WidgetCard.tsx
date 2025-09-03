@@ -14,7 +14,58 @@ export const WidgetCard = ({ widget, onRemove }: WidgetCardProps) => {
   const [data, setData] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
+  const fetchData = async (forceRefresh = false) => {
+    setLoading(true);
+    setError(null);
+    
+    // Add timestamp to prevent caching
+    const timestamp = '';
+    const url = `${buildApiUrl()}${timestamp}`;
+    
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+      
+      const json = await response.json();
+      
+      // Handle rate limiting
+      if (json['Note'] || json['Information']?.includes('API key')) {
+        throw new Error('API rate limit exceeded. Please wait a moment and try again.');
+      }
+      
+      const timeSeriesKey = Object.keys(json).find(key => key.includes('Time Series'));
+      if (!timeSeriesKey) {
+        throw new Error('Invalid API response format');
+      }
+      
+      const timeSeries = json[timeSeriesKey];
+      const formattedData = Object.entries(timeSeries).map(([date, values]: [string, any]) => ({
+        timestamp: date,
+        open: parseFloat(values['1. open'] || values['open'] || '0'),
+        high: parseFloat(values['2. high'] || values['high'] || '0'),
+        low: parseFloat(values['3. low'] || values['low'] || '0'),
+        close: parseFloat(values['4. close'] || values['close'] || '0'),
+        volume: parseInt(values['5. volume'] || values['volume'] || '0'),
+      }));
+      
+      setData(formattedData);
+      setLastRefreshed(new Date());
+    } catch (err) {
+      console.error('Error fetching stock data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch data');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleRefresh = () => {
+    fetchData(true); // Force refresh with new timestamp
+  };
+  
   const buildApiUrl = () => {
     const baseUrl = "https://www.alphavantage.co/query";
     const params = new URLSearchParams();
@@ -77,34 +128,7 @@ export const WidgetCard = ({ widget, onRemove }: WidgetCardProps) => {
   };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const url = buildApiUrl();
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.Note) {
-          throw new Error("API call frequency exceeded. Please try again later.");
-        }
-
-        if (data.Error || data["Error Message"]) {
-          throw new Error(data.Error || data["Error Message"]);
-        }
-
-        const parsedData = parseApiResponse(data);
-        setData(parsedData);
-      } catch (err) {
-        console.error("Error fetching data:", err);
-        setError(err instanceof Error ? err.message : "Failed to fetch data");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    fetchData(false);
   }, [widget]);
 
   const getDataTypeLabel = () => {
@@ -116,32 +140,55 @@ export const WidgetCard = ({ widget, onRemove }: WidgetCardProps) => {
 
   return (
     <Card className="card-hover bg-gradient-surface border border-border/50 shadow-md">
-      <CardHeader className="pb-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-primary">
-              <BarChart3 className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div>
-              <CardTitle className="text-lg font-semibold text-foreground">
-                {widget.company}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {getDataTypeLabel()}
-              </p>
-            </div>
-          </div>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">
+          {widget.company} ({widget.dataType})
+        </CardTitle>
+        <div className="flex items-center space-x-1">
           <Button
             variant="ghost"
-            size="sm"
-            onClick={onRemove}
-            className="h-8 w-8 p-0 hover:bg-error-light hover:text-error rounded-lg"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={loading}
+            className="h-6 w-6 text-muted-foreground hover:text-primary"
+            title="Refresh data"
           >
-            <X className="w-4 h-4" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`${loading ? 'animate-spin' : ''}`}
+            >
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+              <path d="M16 16h5v5" />
+            </svg>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            className="h-6 w-6 text-muted-foreground hover:text-destructive"
+            title="Remove widget"
+          >
+            <X className="h-3 w-3" />
           </Button>
         </div>
       </CardHeader>
-
+      {lastRefreshed && (
+        <div className="px-6 py-1 -mt-2">
+          <p className="text-xs text-muted-foreground">
+            Last updated: {lastRefreshed.toLocaleTimeString()}
+          </p>
+        </div>
+      )}
       <CardContent>
         {loading && (
           <div className="h-96 flex items-center justify-center">

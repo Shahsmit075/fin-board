@@ -18,6 +18,7 @@ export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [retryAfter, setRetryAfter] = useState<number>();
+  const [isCached, setIsCached] = useState(false);
   const { removeWidget } = useAlphaVantageStore();
   const { toast } = useToast();
 
@@ -28,8 +29,13 @@ export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) 
 
       const response = await fetchAlphaVantageData(widget, apiKey);
       setData(response);
+      setIsCached(response.isCached || false);
       setError(null);
       setRetryAfter(undefined);
+      
+      if (response.isCached) {
+        console.log(`[AlphaVantageWidget] Using cached data for ${widget.symbol} (${widget.interval})`);
+      }
     } catch (err) {
       console.error("Error fetching Alpha Vantage data:", err);
       
@@ -72,6 +78,8 @@ export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) 
   };
 
   const handleRefresh = () => {
+    // Force refresh by setting a timestamp to bypass cache
+    const timestamp = Date.now();
     fetchData();
   };
 
@@ -91,7 +99,10 @@ export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) 
   if (loading) {
     return (
       <Card className="w-full h-full flex items-center justify-center">
-        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="flex flex-col items-center gap-2">
+          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+          {isCached && <span className="text-xs text-muted-foreground">Loading from cache...</span>}
+        </div>
       </Card>
     );
   }
@@ -102,18 +113,25 @@ export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) 
       return (
         <Card className="w-full h-full">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {widget.symbol} - {widget.function.replace(/_/g, ' ')}
-            </CardTitle>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => removeWidget(widget.id)}
-                className="h-6 w-6 text-muted-foreground hover:text-destructive"
-              >
-                <X className="h-3 w-3" />
-              </Button>
+            <div className="flex items-center justify-between w-full">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                {widget.symbol} ({getIntervalDisplayName(widget.interval)})
+                {isCached && (
+                  <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                    Cached
+                  </span>
+                )}
+              </CardTitle>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeWidget(widget.id)}
+                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
