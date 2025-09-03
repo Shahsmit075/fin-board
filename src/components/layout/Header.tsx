@@ -31,7 +31,7 @@ const apiServices = [
   {
     id: 3,
     name: "Alpha Vantage",
-    description: "5 API calls / minute",
+    description: "25 API calls / day",
     route: "/dashboard2",
     color: "bg-gradient-to-r from-blue-500 to-cyan-500"
   },
