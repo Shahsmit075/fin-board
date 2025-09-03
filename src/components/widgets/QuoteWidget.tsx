@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuoteWidget as QuoteWidgetType, QuoteData, useDashboardStore } from "@/store/dashboardStore";
 import { useToast } from "@/hooks/use-toast";
 import { RateLimitError } from "@/components/ui/rate-limit-error";
+import { getCachedData, setCachedData, CACHE_TTL, generateCacheKey } from "@/lib/cache";
 
 class FinnhubError extends Error {
   constructor(message: string, public code?: string, public retryAfter?: number) {
@@ -26,16 +27,42 @@ export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
   const { removeWidget } = useDashboardStore();
   const { toast } = useToast();
 
-  const fetchQuoteData = async () => {
+  const fetchQuoteData = async (forceRefresh = false) => {
     try {
       setLoading(true);
       setError(null);
 
+      const cacheKey = generateCacheKey('finnhub', `quote:${widget.symbol}`);
+      
+      // Try to get data from cache first if not forcing refresh
+      if (!forceRefresh) {
+        const cachedData = await getCachedData<QuoteData>(cacheKey);
+        if (cachedData) {
+          setData(cachedData);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // If not in cache or forcing refresh, fetch from API
       const response = await fetch(
         `https://finnhub.io/api/v1/quote?symbol=${widget.symbol}&token=${apiKey}`
       );
       
       if (!response.ok) {
+        // If we have cached data and the API fails, use cached data
+        const cachedData = await getCachedData<QuoteData>(cacheKey);
+        if (cachedData) {
+          setData(cachedData);
+          setLoading(false);
+          toast({
+            title: "Using Cached Data",
+            description: "Couldn't fetch fresh data, showing cached data.",
+            variant: "default",
+          });
+          return;
+        }
+        
         if (response.status === 429) {
           const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
           throw new FinnhubError(
@@ -48,6 +75,9 @@ export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
       }
 
       const quoteData: QuoteData = await response.json();
+      
+      // Cache the successful response for 1 minute
+      await setCachedData(cacheKey, quoteData, CACHE_TTL.INTRADAY);
       
       // Check if the response indicates an invalid symbol (current price is 0)
       if (quoteData.c === 0) {
@@ -96,8 +126,9 @@ export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
     });
   };
 
-  const handleRefresh = () => {
-    fetchQuoteData();
+  const handleRefresh = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.preventDefault();
+    fetchQuoteData(true); // Force refresh
   };
 
   const calculateChange = () => {
@@ -162,7 +193,7 @@ export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={fetchQuoteData}
+              onClick={handleRefresh}
               className="h-6 w-6"
             >
               <RefreshCw className="h-3 w-3" />

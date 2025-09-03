@@ -1,8 +1,10 @@
 import { AlphaVantageData, AlphaVantageMetaData, AlphaVantageWidget } from '@/store/alphaVantageStore';
+import { getCachedData, setCachedData, CACHE_TTL, generateCacheKey } from './cache';
 
 export interface AlphaVantageResponse {
   data: AlphaVantageData[];
   metaData: AlphaVantageMetaData;
+  isCached?: boolean;
 }
 
 export class AlphaVantageError extends Error {
@@ -21,6 +23,12 @@ export class AlphaVantageError extends Error {
   }
 }
 
+/**
+ * Fetch data from AlphaVantage API with caching support
+ * @param widget The widget configuration
+ * @param apiKey AlphaVantage API key
+ * @returns Promise with the API response and metadata
+ */
 export const fetchAlphaVantageData = async (
   widget: AlphaVantageWidget,
   apiKey: string
@@ -38,46 +46,59 @@ export const fetchAlphaVantageData = async (
   }
 
   const url = `${baseUrl}?${params.toString()}`;
+  
+  // Generate cache key based on widget properties
+  const cacheKey = generateCacheKey('alphavantage', widget.symbol, widget.interval || widget.function);
+  
+  // Determine TTL based on data type
+  const ttl = widget.function === 'TIME_SERIES_INTRADAY' 
+    ? CACHE_TTL.INTRADAY 
+    : CACHE_TTL.DAILY;
+    
+  // Try to get data from cache first
+  const cachedData = await getCachedData<AlphaVantageResponse>(cacheKey);
+  if (cachedData) {
+    return { ...cachedData, isCached: true };
+  }
 
   try {
     const response = await fetch(url, {
-      cache: 'no-store', // Disable caching for real-time data
+      cache: 'no-cache', // Bypass browser cache, we handle our own caching
     });
 
     if (!response.ok) {
+      // If we have cached data and the API fails, return cached data with a warning
+      if (cachedData) {
+        console.warn('API request failed, returning cached data');
+        return { ...cachedData, isCached: true };
+      }
       throw new AlphaVantageError(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const jsonData = await response.json();
+    const json = await response.json();
 
-    // Check for API errors
-    if (jsonData['Error Message']) {
-      throw new AlphaVantageError('Invalid symbol or API request');
-    }
-
-    if (jsonData['Note'] || jsonData['Information']) {
-      // Extract retry time from the note if available
-      let retryAfter: number | undefined;
-      const note = jsonData['Note'] || jsonData['Information'];
-      const timeMatch = note?.match(/(\d+)\s+minute/);
-      if (timeMatch) {
-        retryAfter = parseInt(timeMatch[1]) * 60; // Convert minutes to seconds
+    // Handle rate limit response
+    if (json['Note'] || json['Information']?.includes('API key')) {
+      // If we have cached data and hit rate limit, return cached data with a warning
+      if (cachedData) {
+        console.warn('Rate limit hit, returning cached data');
+        return { ...cachedData, isCached: true };
       }
       
       throw new AlphaVantageError(
         'API rate limit exceeded. Please try again later.',
         'RATE_LIMIT_EXCEEDED',
-        retryAfter
+        60 // 1 minute cooldown
       );
     }
 
     // Extract metadata
-    const metaDataKey = Object.keys(jsonData).find(key => key.includes('Meta Data'));
+    const metaDataKey = Object.keys(json).find(key => key.includes('Meta Data'));
     if (!metaDataKey) {
       throw new AlphaVantageError('Invalid API response format');
     }
 
-    const rawMetaData = jsonData[metaDataKey];
+    const rawMetaData = json[metaDataKey];
     const metaData: AlphaVantageMetaData = {
       information: rawMetaData['1. Information'] || rawMetaData['Information'] || '',
       symbol: rawMetaData['2. Symbol'] || rawMetaData['Symbol'] || widget.symbol,
@@ -88,7 +109,7 @@ export const fetchAlphaVantageData = async (
     };
 
     // Extract time series data
-    const timeSeriesKey = Object.keys(jsonData).find(key => 
+    const timeSeriesKey = Object.keys(json).find(key => 
       key.includes('Time Series') || key.includes('Weekly') || key.includes('Monthly')
     );
     
@@ -96,7 +117,7 @@ export const fetchAlphaVantageData = async (
       throw new AlphaVantageError('No time series data found in response');
     }
 
-    const timeSeriesData = jsonData[timeSeriesKey];
+    const timeSeriesData = json[timeSeriesKey];
     if (!timeSeriesData || Object.keys(timeSeriesData).length === 0) {
       throw new AlphaVantageError('No data available for this symbol');
     }
