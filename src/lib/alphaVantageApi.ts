@@ -6,9 +6,18 @@ export interface AlphaVantageResponse {
 }
 
 export class AlphaVantageError extends Error {
-  constructor(message: string, public code?: string) {
+  constructor(
+    message: string, 
+    public code?: string, 
+    public retryAfter?: number
+  ) {
     super(message);
     this.name = 'AlphaVantageError';
+    
+    // Default retry after 1 minute for rate limits
+    if (!retryAfter && message.toLowerCase().includes('rate limit')) {
+      this.retryAfter = 60; // 60 seconds
+    }
   }
 }
 
@@ -46,12 +55,20 @@ export const fetchAlphaVantageData = async (
       throw new AlphaVantageError('Invalid symbol or API request');
     }
 
-    if (jsonData['Note']) {
-      throw new AlphaVantageError('API rate limit exceeded. Please try again later.');
-    }
-
-    if (jsonData['Information']) {
-      throw new AlphaVantageError('API rate limit exceeded (5 requests per minute, 500 per day)');
+    if (jsonData['Note'] || jsonData['Information']) {
+      // Extract retry time from the note if available
+      let retryAfter: number | undefined;
+      const note = jsonData['Note'] || jsonData['Information'];
+      const timeMatch = note?.match(/(\d+)\s+minute/);
+      if (timeMatch) {
+        retryAfter = parseInt(timeMatch[1]) * 60; // Convert minutes to seconds
+      }
+      
+      throw new AlphaVantageError(
+        'API rate limit exceeded. Please try again later.',
+        'RATE_LIMIT_EXCEEDED',
+        retryAfter
+      );
     }
 
     // Extract metadata

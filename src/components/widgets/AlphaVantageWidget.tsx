@@ -6,6 +6,7 @@ import { FinancialChart } from "@/components/widgets/FinancialChart";
 import { AlphaVantageWidget as AlphaVantageWidgetType, useAlphaVantageStore } from "@/store/alphaVantageStore";
 import { fetchAlphaVantageData, AlphaVantageResponse, AlphaVantageError } from "@/lib/alphaVantageApi";
 import { useToast } from "@/hooks/use-toast";
+import { RateLimitError } from "@/components/ui/rate-limit-error";
 
 interface AlphaVantageWidgetProps {
   widget: AlphaVantageWidgetType;
@@ -15,7 +16,8 @@ interface AlphaVantageWidgetProps {
 export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) => {
   const [data, setData] = useState<AlphaVantageResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [retryAfter, setRetryAfter] = useState<number>();
   const { removeWidget } = useAlphaVantageStore();
   const { toast } = useToast();
 
@@ -26,31 +28,31 @@ export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) 
 
       const response = await fetchAlphaVantageData(widget, apiKey);
       setData(response);
+      setError(null);
+      setRetryAfter(undefined);
     } catch (err) {
       console.error("Error fetching Alpha Vantage data:", err);
       
-      let errorMessage = "Failed to fetch data";
       if (err instanceof AlphaVantageError) {
-        errorMessage = err.message;
-      } else if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-      
-      setError(errorMessage);
-      
-      // Show toast for specific errors
-      if (errorMessage.includes("rate limit")) {
-        toast({
-          title: "Rate Limit Exceeded",
-          description: "You've reached the Alpha Vantage API limit. Please wait before refreshing.",
-          variant: "destructive",
-        });
-      } else if (errorMessage.includes("Invalid symbol")) {
-        toast({
-          title: "Invalid Symbol",
-          description: `The symbol "${widget.symbol}" is not valid.`,
-          variant: "destructive",
-        });
+        setError(err);
+        setRetryAfter(err.retryAfter);
+        
+        // Show toast for rate limit errors
+        if (err.code === 'RATE_LIMIT_EXCEEDED') {
+          toast({
+            title: "Rate Limit Exceeded",
+            description: `API rate limit reached. Please wait ${err.retryAfter || 60} seconds before retrying.`,
+            variant: "destructive",
+          });
+        } else if (err.message.includes("Invalid symbol")) {
+          toast({
+            title: "Invalid Symbol",
+            description: `The symbol "${widget.symbol}" is not valid.`,
+            variant: "destructive",
+          });
+        }
+      } else {
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -85,6 +87,81 @@ export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) 
     };
     return displayMap[interval] || interval;
   };
+
+  if (loading) {
+    return (
+      <Card className="w-full h-full flex items-center justify-center">
+        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+      </Card>
+    );
+  }
+
+  if (error) {
+    // Special handling for rate limit errors
+    if (error instanceof AlphaVantageError && error.code === 'RATE_LIMIT_EXCEEDED') {
+      return (
+        <Card className="w-full h-full">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              {widget.symbol} - {widget.function.replace(/_/g, ' ')}
+            </CardTitle>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => removeWidget(widget.id)}
+                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <RateLimitError 
+              error={error}
+              onRetry={fetchData}
+              retryAfter={retryAfter}
+            />
+          </CardContent>
+        </Card>
+      );
+    }
+    
+    // Fallback error UI for other errors
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-destructive">
+            Error: {widget.symbol}
+          </CardTitle>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={fetchData}
+              className="h-6 w-6"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => removeWidget(widget.id)}
+              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4" />
+            <span>{error.message}</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="card-hover bg-gradient-surface border border-border/50 shadow-md">
@@ -143,8 +220,8 @@ export const AlphaVantageWidget = ({ widget, apiKey }: AlphaVantageWidgetProps) 
               </div>
               <div>
                 <h3 className="font-medium text-foreground mb-1">Unable to Load Chart</h3>
-                <p className="text-sm text-muted-foreground">{error}</p>
-                {error.includes("rate limit") && (
+                <p className="text-sm text-muted-foreground">{error.message || 'An unknown error occurred'}</p>
+                {error instanceof AlphaVantageError && error.code === 'RATE_LIMIT_EXCEEDED' && (
                   <div className="mt-3 p-3 bg-warning-light rounded-lg">
                     <div className="flex items-center gap-2 text-warning">
                       <Info className="w-4 h-4" />

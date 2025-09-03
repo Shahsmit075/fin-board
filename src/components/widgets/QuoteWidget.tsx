@@ -1,9 +1,17 @@
 import { useState, useEffect } from "react";
-import { X, RefreshCw, AlertCircle, TrendingUp, TrendingDown } from "lucide-react";
+import { X, RefreshCw, AlertCircle, TrendingUp, TrendingDown, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuoteWidget as QuoteWidgetType, QuoteData, useDashboardStore } from "@/store/dashboardStore";
 import { useToast } from "@/hooks/use-toast";
+import { RateLimitError } from "@/components/ui/rate-limit-error";
+
+class FinnhubError extends Error {
+  constructor(message: string, public code?: string, public retryAfter?: number) {
+    super(message);
+    this.name = 'FinnhubError';
+  }
+}
 
 interface QuoteWidgetProps {
   widget: QuoteWidgetType;
@@ -13,7 +21,8 @@ interface QuoteWidgetProps {
 export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
   const [data, setData] = useState<QuoteData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [retryAfter, setRetryAfter] = useState<number>();
   const { removeWidget } = useDashboardStore();
   const { toast } = useToast();
 
@@ -27,6 +36,14 @@ export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
       );
       
       if (!response.ok) {
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
+          throw new FinnhubError(
+            'API rate limit exceeded. Please try again later.',
+            'RATE_LIMIT_EXCEEDED',
+            retryAfter
+          );
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
@@ -40,10 +57,22 @@ export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
       setData(quoteData);
     } catch (err) {
       console.error("Error fetching quote data:", err);
-      const errorMessage = err instanceof Error ? err.message : "Failed to fetch quote data";
-      setError(errorMessage);
+      const error = err instanceof Error 
+        ? (err as FinnhubError).code === 'RATE_LIMIT_EXCEEDED'
+          ? err as FinnhubError
+          : new Error(err.message)
+        : new Error("Failed to fetch quote data");
       
-      if (errorMessage.includes("Invalid symbol")) {
+      setError(error);
+      
+      if (error instanceof FinnhubError && error.code === 'RATE_LIMIT_EXCEEDED') {
+        setRetryAfter(error.retryAfter);
+        toast({
+          title: "Rate Limit Exceeded",
+          description: `API rate limit reached. Please wait ${error.retryAfter || 60} seconds before retrying.`,
+          variant: "destructive",
+        });
+      } else if (error.message.includes("Invalid symbol")) {
         toast({
           title: "Invalid Symbol",
           description: `The symbol "${widget.symbol}" is not valid or has no data available.`,
@@ -82,6 +111,81 @@ export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
   };
 
   const { change, changePercent, isPositive } = calculateChange();
+
+  if (loading) {
+    return (
+      <Card className="w-full h-full flex items-center justify-center">
+        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+      </Card>
+    );
+  }
+
+  if (error) {
+    // Special handling for rate limit errors
+    if (error instanceof FinnhubError && error.code === 'RATE_LIMIT_EXCEEDED') {
+      return (
+        <Card className="w-full h-full">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              {widget.symbol}
+            </CardTitle>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => removeWidget(widget.id)}
+                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <RateLimitError 
+              error={error}
+              onRetry={fetchQuoteData}
+              retryAfter={retryAfter}
+            />
+          </CardContent>
+        </Card>
+      );
+    }
+    
+    // Fallback error UI for other errors
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-destructive">
+            Error: {widget.symbol}
+          </CardTitle>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={fetchQuoteData}
+              className="h-6 w-6"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => removeWidget(widget.id)}
+              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4" />
+            <span>{error.message}</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="card-hover bg-gradient-surface border border-border/50 shadow-md">
@@ -122,76 +226,51 @@ export const QuoteWidget = ({ widget, apiKey }: QuoteWidgetProps) => {
       </CardHeader>
 
       <CardContent>
-        {loading && (
-          <div className="flex items-center justify-center py-8">
-            <div className="text-center space-y-4">
-              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-muted-foreground text-sm">Loading quote data...</p>
+        <div className="space-y-4">
+          {/* Current Price */}
+          <div className="text-center pb-4 border-b border-border/50">
+            <div className="text-3xl font-bold text-foreground mb-2">
+              ${data.c.toFixed(2)}
+            </div>
+            <div className={`flex items-center justify-center gap-1 text-sm font-medium ${
+              isPositive ? 'text-success' : 'text-error'
+            }`}>
+              {isPositive ? (
+                <TrendingUp className="w-4 h-4" />
+              ) : (
+                <TrendingDown className="w-4 h-4" />
+              )}
+              <span>
+                {isPositive ? '+' : ''}${change.toFixed(2)} ({isPositive ? '+' : ''}{changePercent.toFixed(2)}%)
+              </span>
             </div>
           </div>
-        )}
 
-        {error && (
-          <div className="flex items-center justify-center py-8">
-            <div className="text-center space-y-4 max-w-sm">
-              <div className="w-12 h-12 mx-auto bg-error-light rounded-xl flex items-center justify-center">
-                <AlertCircle className="w-6 h-6 text-error" />
-              </div>
-              <div>
-                <h3 className="font-medium text-foreground mb-1">Unable to Load Data</h3>
-                <p className="text-sm text-muted-foreground">{error}</p>
-              </div>
+          {/* Quote Details */}
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <div className="text-muted-foreground">Open</div>
+              <div className="font-medium text-foreground">${data.o.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">High</div>
+              <div className="font-medium text-success">${data.h.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Low</div>
+              <div className="font-medium text-error">${data.l.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Previous Close</div>
+              <div className="font-medium text-foreground">${data.pc.toFixed(2)}</div>
             </div>
           </div>
-        )}
 
-        {!loading && !error && data && (
-          <div className="space-y-4">
-            {/* Current Price */}
-            <div className="text-center pb-4 border-b border-border/50">
-              <div className="text-3xl font-bold text-foreground mb-2">
-                ${data.c.toFixed(2)}
-              </div>
-              <div className={`flex items-center justify-center gap-1 text-sm font-medium ${
-                isPositive ? 'text-success' : 'text-error'
-              }`}>
-                {isPositive ? (
-                  <TrendingUp className="w-4 h-4" />
-                ) : (
-                  <TrendingDown className="w-4 h-4" />
-                )}
-                <span>
-                  {isPositive ? '+' : ''}${change.toFixed(2)} ({isPositive ? '+' : ''}{changePercent.toFixed(2)}%)
-                </span>
-              </div>
-            </div>
-
-            {/* Quote Details */}
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <div className="text-muted-foreground">Open</div>
-                <div className="font-medium text-foreground">${data.o.toFixed(2)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Previous Close</div>
-                <div className="font-medium text-foreground">${data.pc.toFixed(2)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">High</div>
-                <div className="font-medium text-success">${data.h.toFixed(2)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Low</div>
-                <div className="font-medium text-error">${data.l.toFixed(2)}</div>
-              </div>
-            </div>
-
-            {/* Last Updated */}
-            <div className="text-xs text-muted-foreground text-center pt-2 border-t border-border/30">
-              Last updated: {new Date(data.t * 1000).toLocaleTimeString()}
-            </div>
+          {/* Last Updated */}
+          <div className="text-xs text-muted-foreground text-center pt-2 border-t border-border/30">
+            Last updated: {new Date(data.t * 1000).toLocaleTimeString()}
           </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   );
