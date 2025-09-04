@@ -1,288 +1,262 @@
-# FinBoard - Financial Dashboard Platform
+# FinBoard
 
-A modern, customizable financial dashboard that allows users to create and manage financial widgets powered by multiple data providers including Finnhub and Alpha Vantage.
+A customizable financial dashboard that lets users create and manage financial widgets powered by **Finnhub** and **Alpha Vantage** APIs, to explore price history, quotes, and technical views quickly.
+
+---
 
 ## 🏗️ Tech Stack
 
-- **Framework**: React 18 + Vite
-- **Styling**: Tailwind CSS + shadcn/ui components
-- **State Management**: Zustand with localStorage persistence
-- **Charts**: Recharts for financial data visualization
-- **Routing**: React Router DOM
-- **Language**: TypeScript
-- **Icons**: Lucide React
+* **Framework**: React 18 + Vite
+* **Styling**: Tailwind CSS + shadcn/ui
+* **State Management**: Zustand (localStorage persistence)
+* **Charts**: Recharts
+* **Routing**: React Router DOM
+* **Client Cache**: IndexedDB via `localforage`
 
-## ✨ Features
+---
 
-- **Multi-Provider Support**: Finnhub and Alpha Vantage APIs
-- **Widget-Based Architecture**: Modular, customizable financial widgets
-- **Real-Time Data**: Live stock quotes and historical data
-- **Responsive Design**: Mobile-first, responsive interface
-- **Persistent State**: Dashboard configuration saved locally
-- **Type Safety**: Full TypeScript implementation
-- **Modern UI**: Clean, professional interface with shadcn/ui
+## 🏗️ Architecture
 
-## 🚀 Quick Start
+```mermaid
+flowchart TD
+  U[User Browser] -->|UI Interaction| R[React + Vite App]
 
-### Prerequisites
+  subgraph Frontend [Frontend App]
+    R --> Z[Zustand Store]
+    R --> C[shadcn/ui Components + Recharts]
+  end
 
-- Node.js 18+ 
-- npm or yarn
-- API keys from supported providers
+  subgraph ClientStorage [Client-Side Storage]
+    LS[(localStorage)\nDashboard Config]
+    IDB[(IndexedDB via localforage)\nAPI Response Cache]
+  end
 
-### Installation
+  subgraph API_Providers [External APIs]
+    A[Alpha Vantage API]
+    F[Finnhub API]
+  end
 
-```bash
-# Clone the repository
-git clone <YOUR_GIT_URL>
-cd finboard
+  %% Cache-first flow for API data
+  R -->|Check Cache / Fetch| IDB
+  IDB -->|Cache Hit| R
+  IDB -->|Cache Miss → Fetch| A
+  IDB -->|Cache Miss → Fetch| F
 
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
+  %% Config persistence
+  Z -->|Persist Config| LS
+  LS -->|Restore State| Z
 ```
 
-The application will be available at `http://localhost:5173`
+> **Refresh semantics**
+>
+> * **Page reload** → fetches **fresh** data (financial data should not be stale).
+> * **Duplicate widgets** (same inputs) → **served from cache** to save quota.
+> * **Refresh button** in a widget → **bypasses cache** and forces a new API call.
 
-### Build for Production
+---
 
-```bash
-npm run build
-npm run preview
-```
-
-## 🔑 API Setup
-
-### Finnhub API
-
-1. Visit [Finnhub.io](https://finnhub.io/register) to create a free account
-2. Navigate to `/dashboard` in the application
-3. Enter your API key in the setup form
-
-**Free Tier Limits:**
-- 60 calls/minute
-- 1000 calls/day
-
-### Alpha Vantage API
-
-1. Get your free API key from [Alpha Vantage](https://www.alphavantage.co/support/#api-key)
-2. Navigate to `/dashboard2` in the application  
-3. Add widgets with your API key
-
-**Free Tier Limits:**
-- 5 calls/minute
-- 500 calls/day
-
-## 📊 Available Dashboards
-
-### Finnhub Dashboard (`/dashboard`)
-
-Real-time stock quotes with:
-- Current price display
-- Price change indicators
-- Refresh functionality
-- Symbol-based widgets
-
-### Alpha Vantage Dashboard (`/dashboard2`)
-
-Historical financial data with:
-- Time series charts (Daily, Weekly, Monthly, Intraday)
-- OHLCV candlestick visualization
-- Volume indicators
-- Multiple chart intervals
-
-## 🛠️ API Endpoints
-
-### Finnhub Integration
-
-```typescript
-// Real-time quote endpoint
-GET https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={API_KEY}
-
-// Response format
-{
-  "c": 261.74,    // Current price
-  "h": 263.31,    // High price of the day
-  "l": 260.68,    // Low price of the day
-  "o": 261.07,    // Open price of the day
-  "pc": 259.45,   // Previous close price
-  "t": 1582641000 // UNIX timestamp
-}
-```
-
-### Alpha Vantage Integration
-
-```typescript
-// Daily time series
-GET https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={SYMBOL}&apikey={API_KEY}
-
-// Intraday data
-GET https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={SYMBOL}&interval=5min&apikey={API_KEY}
-
-// Response format (simplified)
-{
-  "Meta Data": {
-    "1. Information": "Daily Prices (open, high, low, close) and Volumes",
-    "2. Symbol": "IBM",
-    "3. Last Refreshed": "2023-12-01",
-    "4. Output Size": "Compact",
-    "5. Time Zone": "US/Eastern"
-  },
-  "Time Series (Daily)": {
-    "2023-12-01": {
-      "1. open": "157.50",
-      "2. high": "158.85",
-      "3. low": "155.31",
-      "4. close": "156.23",
-      "5. volume": "4567890"
-    }
-    // ... more data points
-  }
-}
-```
-
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 src/
 ├── components/
-│   ├── layout/           # Header, Footer, Hero components
-│   ├── modals/          # Widget creation modals
-│   ├── ui/              # shadcn/ui components
-│   └── widgets/         # Financial widget components
-├── lib/                 # Utility functions and API clients
-├── pages/              # Route components
-├── store/              # Zustand state management
-└── hooks/              # Custom React hooks
+│   ├── layout/           # Header, Footer, Hero
+│   ├── modals/           # Widget creation/edit dialogs
+│   ├── ui/               # shadcn/ui wrappers
+│   └── widgets/          # Financial widget components
+├── lib/                  # API clients, cache, utils
+├── pages/                # Route components
+├── store/                # Zustand stores
+└── hooks/                # Custom hooks
 ```
 
-## 🎯 Usage Examples
+---
 
-### Adding a Finnhub Widget
+## ✨ Features
 
-```typescript
-// 1. Set up API key in dashboard
-const { setApiKey } = useDashboardStore();
-setApiKey('your-finnhub-api-key');
+* **Multi-Provider**: Finnhub + Alpha Vantage
+* **Widgetized**: Add/remove per symbol & interval
+* **Charts**: Line, candlestick (OHLCV), volume overlays
+* **Client Caching**: IndexedDB (TTL per interval)
+* **Persistent Layout**: Zustand + localStorage
+* **Responsive UI**: Tailwind + shadcn/ui
 
-// 2. Add widget programmatically
-const { addWidget } = useDashboardStore();
-addWidget('AAPL'); // Apple Inc.
+---
+
+## Installation
+
+```bash
+# Local
+git clone <YOUR_GIT_URL>
+cd finboard
+npm install
+npm run dev        # http://localhost:5173
+
+# Production
+npm run build
+npm run preview
 ```
 
-### Adding an Alpha Vantage Widget
+---
 
-```typescript
-// 1. Add widget with configuration
-const { addWidget } = useAlphaVantageStore();
-addWidget('MSFT', 'daily'); // Microsoft daily data
+## 📦 API Setup & Dashboards
 
-// 2. Available intervals
-type Interval = 'daily' | 'weekly' | 'monthly' | '5min' | '15min' | '30min' | '60min';
+<details>
+  <summary><strong>API Keys & Limits</strong></summary>
+
+### Finnhub (free tier)
+
+* 60 calls/min
+* 1000 calls/day
+  Get a key: [https://finnhub.io/register](https://finnhub.io/register)
+
+### Alpha Vantage (free tier)
+
+* 5 calls/min
+* 500 calls/day
+  Get a key: [https://www.alphavantage.co/support/#api-key](https://www.alphavantage.co/support/#api-key)
+
+> **Demo endpoints** (Alpha Vantage `apikey=demo`) are free to use home page for exploration of widgets -> NO API KEY REQUIRED FOR THEM !.
+
+</details>
+
+<details>
+
+### `/` — HOME PAGE
+
+* Free widgets creation without need of API KEY - internally using Alpha Vantage's free API endpoints for 'IBM' and 'MSFT' companies..
+
+### `/dashboard` — Finnhub
+
+* Real-time quote widgets (current price, change, %)
+* Manual **Refresh** button (bypasses cache)
+
+### `/dashboard2` — Alpha Vantage
+
+* Historical time series (Daily/Weekly/Monthly/Intraday)
+* **OHLCV candlestick** + volume
+* Interval aware TTL caching (e.g., intraday shorter, daily longer)
+
+</details>
+
+---
+
+## 🛠️ API Endpoints (collapsible)
+
+<details>
+  <summary><strong>Finnhub</strong> (examples)</summary>
+
+```http
+# Real-time Quote
+GET https://finnhub.io/api/v1/quote?symbol=AAPL&token=YOUR_API_KEY
+
+# Company Profile
+GET https://finnhub.io/api/v1/stock/profile2?symbol=AAPL&token=YOUR_API_KEY
+
+# Candles (Historical)
+GET https://finnhub.io/api/v1/stock/candle?symbol=AAPL&resolution=D&from=1672531200&to=1672617600&token=YOUR_API_KEY
 ```
 
-## ⚠️ Important Notes
+**Quote response**
 
-### API Key Security
-
-**Current Implementation**: API keys are stored in browser localStorage for development convenience.
-
-**Security Considerations:**
-- Keys are visible in browser DevTools
-- Not recommended for production environments
-- Consider server-side proxy for production deployments
-
-### Rate Limiting
-
-Both APIs have strict rate limits:
-
-- **Finnhub**: 60 calls/minute, 1000/day (free)
-- **Alpha Vantage**: 25/day (free)
-
-**Handling Rate Limits:**
-```typescript
-// Error responses indicate rate limiting
+```json
 {
-  "Note": "Thank you for using Alpha Vantage! Our standard API call frequency is 25 calls per day."
+  "c": 261.74, "h": 263.31, "l": 260.68, "o": 261.07,
+  "pc": 259.45, "t": 1582641000
 }
 ```
 
-### Data Freshness
+</details>
 
-- **Finnhub**: Real-time data (15-minute delay for free tier)
-- **Alpha Vantage**: End-of-day data for daily/weekly/monthly, real-time for intraday
+<details>
+  <summary><strong>Alpha Vantage</strong> (examples)</summary>
 
-## 🔧 Configuration
+```http
+# Daily
+GET https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=IBM&apikey=YOUR_API_KEY
 
-### Environment Setup
+# Weekly
+GET https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol=MSFT&apikey=YOUR_API_KEY
 
-No environment variables required for basic setup. API keys are provided by users through the UI.
+# Monthly
+GET https://www.alphavantage.co/query?function=TIME_SERIES_MONTHLY&symbol=AAPL&apikey=YOUR_API_KEY
 
-### Tailwind Configuration
+# Intraday (5min)
+GET https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=GOOGL&interval=5min&apikey=YOUR_API_KEY
 
-Custom design tokens defined in:
-- `src/index.css` - CSS custom properties
-- `tailwind.config.ts` - Tailwind theme extensions
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**API Key Invalid:**
-- Verify key format and provider
-- Check API key permissions
-- Ensure key is active
-
-**Rate Limit Exceeded:**
-- Wait for rate limit reset
-- Reduce request frequency
-- Consider upgrading API plan
-
-**Widget Not Loading:**
-- Check network connectivity
-- Verify symbol format (e.g., 'AAPL' not 'Apple')
-- Check browser console for errors
-
-### Debug Mode
-
-Enable debug logging:
-```typescript
-// In browser console
-localStorage.setItem('debug', 'finboard:*');
+# Demo (rate-limited)
+GET https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=IBM&apikey=demo
 ```
+
+**Daily response (simplified)**
+
+```json
+{
+  "Meta Data": {
+    "1. Information": "Daily Prices (open, high, low, close) and Volumes",
+    "2. Symbol": "IBM",
+    "3. Last Refreshed": "2025-09-02",
+    "4. Output Size": "Compact",
+    "5. Time Zone": "US/Eastern"
+  },
+  "Time Series (Daily)": {
+    "2025-09-02": {
+      "1. open": "240.9000",
+      "2. high": "241.5500",
+      "3. low": "238.2500",
+      "4. close": "241.5000",
+      "5. volume": "3469501"
+    }
+  }
+}
+```
+
+</details>
+
+---
+
+## 🧩 Product Notes (refresh, caching, UX)
+
+* **Reloading page** → **fresh** API calls (<b>priority</b> : financial correctness > stale cache).
+* **Duplicate widgets (same inputs)** → **served from cache** to save quota.
+* **Refresh button** → **forces** network fetch (bypasses cache).
+* **Rate limit UX** → show **“Quota exceeded”** widget state with a **retry countdown**.
+
+---
+
+## 🧠 Caching Policy (client-side)
+
+* Backend-less caching via **IndexedDB** (`localforage`)
+* **TTL by interval** (can be tuned as needed): currently set to 300s showing priority given to fresher data in fast-change environments such as stock's
+
+---
 
 ## 🚧 Development
 
-### Available Scripts
-
 ```bash
-npm run dev          # Start development server
+npm run dev          # Start dev server
 npm run build        # Build for production
-npm run preview      # Preview production build
-npm run lint         # Run ESLint
-npm run type-check   # TypeScript type checking
 ```
 
 ### Adding New Providers
 
-1. Create provider-specific store in `src/store/`
-2. Implement API client in `src/lib/`
-3. Create widget components in `src/components/widgets/`
-4. Add route in `src/App.tsx`
+1. Add provider client in `src/lib/` (fetch + parse + normalize).
+2. Add provider store in `src/store/`.
+3. Create widgets in `src/components/widgets/`.
+4. Wire route under `src/pages/` and navigation.
+
+---
 
 ## 🔮 Future Enhancements
 
-- [ ] WebSocket support for real-time updates
-- [ ] Advanced charting (candlestick, technical indicators)
-- [ ] Portfolio tracking
-- [ ] Export/import dashboard configurations
-- [ ] Dark mode toggle
-- [ ] Drag-and-drop widget arrangement
-- [ ] More data providers (Polygon.io, IEX Cloud)
-- [ ] Server-side API proxy for enhanced security
+* [ ] Secure API proxy (server-side key handling, encryption at rest)
+* [ ] In-house request throttling/queueing (soft rate limiting)
+* [ ] WebSockets for real-time updates
+* [ ] Export/import dashboard configs
+* [ ] Drag-and-drop widget arrangement
+* [ ] Advanced indicators (SMA/EMA, Bollinger)
+* [ ] PWA & offline indicators
+* [ ] Multi-tenant/team dashboards
+* [ ] Analytics + feature flags (A/B tests for chart variants)
 
-
-
-===
+---
