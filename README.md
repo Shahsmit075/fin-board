@@ -16,7 +16,6 @@ A customizable financial dashboard that lets users create and manage financial w
 ---
 
 ## 🏗️ Architecture
-
 ```mermaid
 flowchart TD
   U[User Browser] -->|UI Interaction| R[React + Vite App]
@@ -27,8 +26,8 @@ flowchart TD
   end
 
   subgraph ClientStorage [Client-Side Storage]
-    LS[(localStorage)\nDashboard Config]
-    IDB[(IndexedDB via localforage)\nAPI Response Cache]
+    LS[localStorage\nDashboard Config]
+    IDB[IndexedDB via localforage\nAPI Response Cache]
   end
 
   subgraph API_Providers [External APIs]
@@ -54,7 +53,10 @@ flowchart TD
 > * **Refresh button** in a widget → **bypasses cache** and forces a new API call.
 
 ---
-
+## DEMO : 
+1) **App Demo** : [<i>Video</i>](https://drive.google.com/file/d/1_Vj_kblnhBlKqqF8fN9XuioP3CtvoFby/view?usp=sharing)
+2) **Cache Demo** : [<i>Video</i>](https://drive.google.com/file/d/1jd0fLd1g7WlacfWc4FUiZOXn63LX3Qnj/view?usp=sharing)
+---
 ## Project Structure
 
 ```
@@ -249,14 +251,7 @@ npm run build        # Build for production
 
 ## 🔮 Future Enhancements
 
-* [ ] Secure API proxy (server-side key handling, encryption at rest)
-* [ ] In-house request throttling/queueing (soft rate limiting)
-* [ ] WebSockets for real-time updates
-* [ ] Export/import dashboard configs
-* [ ] Drag-and-drop widget arrangement
-* [ ] Advanced indicators (SMA/EMA, Bollinger)
-* [ ] PWA & offline indicators
-* [ ] Multi-tenant/team dashboards
-* [ ] Analytics + feature flags (A/B tests for chart variants)
-
+* [ ] WebSockets for real-time updates (dependent on API providers..(
+* [ ] Drag-and-drop widgets + Import/Export widgets : Product Scope
+* [ ] Multi API Provider's Support
 ---
