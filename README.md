@@ -16,7 +16,6 @@ A customizable financial dashboard that lets users create and manage financial w
 ---
 
 ## 🏗️ Architecture
-
 ```mermaid
 flowchart TD
   U[User Browser] -->|UI Interaction| R[React + Vite App]
@@ -27,8 +26,8 @@ flowchart TD
   end
 
   subgraph ClientStorage [Client-Side Storage]
-    LS[(localStorage)\nDashboard Config]
-    IDB[(IndexedDB via localforage)\nAPI Response Cache]
+    LS[localStorage\nDashboard Config]
+    IDB[IndexedDB via localforage\nAPI Response Cache]
   end
 
   subgraph API_Providers [External APIs]
@@ -54,7 +53,10 @@ flowchart TD
 > * **Refresh button** in a widget → **bypasses cache** and forces a new API call.
 
 ---
+## DEMO : 
 
+
+---
 ## Project Structure
 
 ```
